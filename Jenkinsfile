@@ -73,25 +73,28 @@ pipeline {
             }
         }
 
-        stage('7. Kubernetes Deploy') {
-            steps {
-                echo '=== Deploying to Kubernetes ==='
-                bat '''
-                kubectl apply -f k8s/deployment.yaml -n default --validate=false
-                kubectl apply -f k8s/service.yaml -n default --validate=false
-                '''
-            }
+       stage('7. Kubernetes Deploy') {
+    steps {
+        echo '=== Deploying to Kubernetes ==='
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+            bat "kubectl apply -f k8s/deployment.yaml -n default --validate=false"
+            bat "kubectl apply -f k8s/service.yaml -n default --validate=false"
         }
+    }
+}
 
-        stage('8. Smoke Test') {
-            steps {
-                echo '=== Smoke Test ==='
-                bat '''
-                timeout /t 10
-                kubectl get pods -n default
-                '''
-            }
+stage('8. Smoke Test') {
+    steps {
+        echo '=== Smoke Test ==='
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+            bat '''
+            timeout /t 10
+            kubectl get pods -n default
+            '''
         }
+    }
+}
+
     }
 
     post {
