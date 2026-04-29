@@ -1,0 +1,12 @@
+# ──────────────────────────────────────────────
+# ConfigMap — environment-specific configuration
+# ──────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: job-alert-portal-config
+  namespace: default
+data:
+  SPRING_PROFILES_ACTIVE: "prod"
+  SERVER_PORT: "8080"
+  APP_NAME: "Job Alert Portal"

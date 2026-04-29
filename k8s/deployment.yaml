@@ -1,0 +1,56 @@
+# ──────────────────────────────────────────────
+# Kubernetes Deployment — Job Alert Portal
+# Jenkins replaces IMAGE_PLACEHOLDER at deploy time
+# ──────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: job-alert-portal
+  namespace: default
+  labels:
+    app: job-alert-portal
+    version: "1.0"
+spec:
+  replicas: 2                    # Run 2 pods for availability
+  selector:
+    matchLabels:
+      app: job-alert-portal
+  strategy:
+    type: RollingUpdate           # Zero-downtime updates
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: job-alert-portal
+    spec:
+      containers:
+        - name: job-alert-portal
+          image: IMAGE_PLACEHOLDER  # Replaced by Jenkins sed command
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /api/alerts/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/alerts/health
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 5

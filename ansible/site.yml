@@ -1,0 +1,219 @@
+---
+# ════════════════════════════════════════════════════════════
+# Ansible Master Playbook — DevOps Infrastructure Setup
+# Installs and configures: Docker, Jenkins, Kubernetes tools
+#
+# Usage:
+#   ansible-playbook -i inventory.ini site.yml
+#   ansible-playbook -i inventory.ini site.yml --tags docker
+#   ansible-playbook -i inventory.ini site.yml --tags jenkins
+# ════════════════════════════════════════════════════════════
+
+- name: Install Docker on all hosts
+  hosts: all
+  become: yes
+  tags: [docker]
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - software-properties-common
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker CE
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add current user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: Verify Docker installation
+      command: docker --version
+      register: docker_version
+    - debug:
+        msg: "Docker installed: {{ docker_version.stdout }}"
+
+
+- name: Install and configure Jenkins
+  hosts: jenkins_server
+  become: yes
+  tags: [jenkins]
+  tasks:
+    - name: Install Java (Jenkins requires JDK 17)
+      apt:
+        name: openjdk-17-jdk
+        state: present
+
+    - name: Add Jenkins GPG key
+      apt_key:
+        url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+        state: present
+
+    - name: Add Jenkins apt repository
+      apt_repository:
+        repo: "deb https://pkg.jenkins.io/debian-stable binary/"
+        state: present
+
+    - name: Install Jenkins
+      apt:
+        name: jenkins
+        state: present
+        update_cache: yes
+
+    - name: Start and enable Jenkins
+      service:
+        name: jenkins
+        state: started
+        enabled: yes
+
+    - name: Add jenkins user to docker group
+      user:
+        name: jenkins
+        groups: docker
+        append: yes
+
+    - name: Wait for Jenkins to start
+      wait_for:
+        port: 8080
+        host: localhost
+        delay: 10
+        timeout: 120
+
+    - name: Get initial Jenkins admin password
+      command: cat /var/lib/jenkins/secrets/initialAdminPassword
+      register: jenkins_password
+      ignore_errors: yes
+
+    - debug:
+        msg: "Jenkins initial password: {{ jenkins_password.stdout }}"
+
+
+- name: Install Kubernetes tools
+  hosts: k8s_nodes
+  become: yes
+  tags: [kubernetes]
+  tasks:
+    - name: Disable swap (required for Kubernetes)
+      command: swapoff -a
+
+    - name: Disable swap permanently
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
+    - name: Load required kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Set sysctl params for Kubernetes
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_set: yes
+      loop:
+        - { key: "net.bridge.bridge-nf-call-iptables",  value: "1" }
+        - { key: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+        - { key: "net.ipv4.ip_forward",                 value: "1" }
+
+    - name: Add Kubernetes apt key
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key
+        state: present
+
+    - name: Add Kubernetes repository
+      apt_repository:
+        repo: "deb https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
+        state: present
+
+    - name: Install kubeadm, kubelet, kubectl
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        update_cache: yes
+
+    - name: Hold Kubernetes packages at current version
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    - name: Enable kubelet service
+      service:
+        name: kubelet
+        state: started
+        enabled: yes
+
+    - name: Verify kubectl
+      command: kubectl version --client
+      register: kubectl_ver
+    - debug:
+        msg: "kubectl: {{ kubectl_ver.stdout }}"
+
+
+- name: Deploy application with Ansible
+  hosts: jenkins_server
+  become: yes
+  tags: [deploy]
+  tasks:
+    - name: Copy Kubernetes manifests to server
+      copy:
+        src: "{{ item }}"
+        dest: /tmp/k8s/
+      loop:
+        - k8s/deployment.yaml
+        - k8s/service.yaml
+        - k8s/configmap.yaml
+
+    - name: Apply Kubernetes manifests
+      command: "kubectl apply -f /tmp/k8s/"
+
+    - name: Check rollout status
+      command: kubectl rollout status deployment/job-alert-portal
+      register: rollout
+    - debug:
+        msg: "{{ rollout.stdout }}"

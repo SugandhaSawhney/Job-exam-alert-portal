@@ -1,0 +1,12 @@
+target/
+*.class
+*.jar
+*.war
+*.log
+.DS_Store
+.idea/
+*.iml
+.env
+__pycache__/
+*.pyc
+*.retry
