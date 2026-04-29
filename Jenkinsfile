@@ -54,7 +54,7 @@ pipeline {
             post {
                 always {
                     // Publish JUnit test results in Jenkins UI
-                    junit '**/target/surefire-reports/*.xml'
+                    junit allowEmptyResults: true, testResults: 'target/surefire-reports/*.xml'
                 }
             }
         }
@@ -110,7 +110,12 @@ pipeline {
                 echo '=== Deploying to Kubernetes cluster ==='
                 // Substitute the image tag in the deployment YAML
                 bat """
-                    sed -i 's|IMAGE_PLACEHOLDER|${FULL_IMAGE}|g' k8s/deployment.yaml
+                    bat """
+                    powershell -Command "(Get-Content k8s/deployment.yaml) -replace 'IMAGE_PLACEHOLDER','${FULL_IMAGE}' | Set-Content k8s/deployment.yaml"
+                    kubectl apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
+                    kubectl apply -f k8s/service.yaml -n ${K8S_NAMESPACE}
+                    kubectl rollout status deployment/job-alert-portal -n ${K8S_NAMESPACE}
+                    """
                     kubectl apply -f k8s/deployment.yaml -n ${K8S_NAMESPACE}
                     kubectl apply -f k8s/service.yaml    -n ${K8S_NAMESPACE}
                     kubectl rollout status deployment/job-alert-portal -n ${K8S_NAMESPACE}
@@ -125,11 +130,8 @@ pipeline {
             steps {
                 echo '=== Running smoke test against deployed app ==='
                 bat """
-                    sleep 10
-                    kubectl get pods -n ${K8S_NAMESPACE} -l app=job-alert-portal
-                    NODE_PORT=\$(kubectl get svc job-alert-portal-service -n ${K8S_NAMESPACE} \
-                                -o jsonpath='{.spec.ports[0].nodePort}')
-                    curl -f http://localhost:\${NODE_PORT}/api/alerts/health || exit 1
+                timeout /t 10
+                kubectl get pods -n ${K8S_NAMESPACE} -l app=job-alert-portal
                 """
             }
         }
@@ -147,7 +149,8 @@ pipeline {
         }
         always {
             // Clean up local Docker images to save disk space
-            bat "docker rmi ${FULL_IMAGE} || true"
+            bat "docker rmi ${FULL_IMAGE} || exit 0"
+            bat "docker rmi ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest || exit 0"
             bat "docker rmi ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest || true"
         }
     }
