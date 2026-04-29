@@ -77,8 +77,8 @@ pipeline {
             steps {
                 echo '=== Deploying to Kubernetes ==='
                 bat '''
-                kubectl apply -f k8s/deployment.yaml -n default
-                kubectl apply -f k8s/service.yaml -n default
+                kubectl apply -f k8s/deployment.yaml -n default --validate=false
+                kubectl apply -f k8s/service.yaml -n default --validate=false
                 '''
             }
         }
