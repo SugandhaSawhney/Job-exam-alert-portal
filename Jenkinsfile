@@ -7,7 +7,7 @@ pipeline {
     }
 
     environment {
-        DOCKER_HUB_USER = 'your-dockerhub-username'
+        DOCKER_HUB_USER = 'sugandhasawhney'
         IMAGE_NAME = 'job-alert-portal'
         IMAGE_TAG = "${BUILD_NUMBER}"
         FULL_IMAGE = "${DOCKER_HUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
